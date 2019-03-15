@@ -1,8 +1,8 @@
 `timescale 1ns / 1ps
 
 module MEM(
-    input [?:0] EXE_MEM_BUS,
-    output [?:0] MEM_WB_BUS,
+    input [79:0] EXE_MEM_BUS,
+    output [42:0] MEM_WB_BUS,
     output [3:0] w_mem,
     output [7:0] addr_mem,
     input [31:0] load_data,
