@@ -10,7 +10,7 @@ module MEM(
     inout mres,
     output reg mreq
 );
-    wire [9:0] addr;
+    wire [31:0] addr;
     wire [31:0] store_data;
     reg [31:0] load_data;
     wire [31:0] exe_result;
@@ -79,5 +79,5 @@ module MEM(
         end
     end
     assign result = read ? mem_result : exe_result;
-    assign {wb_through,result} = MEM_WB_BUS;
+    assign MEM_WB_BUS = {wb_through,result};
 endmodule
