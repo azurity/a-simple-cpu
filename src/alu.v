@@ -27,6 +27,12 @@ module alu(
     wire [31:0] shf_temp_4;
     wire [31:0] shf_temp_5;
     wire EQ,NE,GT,LT;
+    wire [32:0] tmp0;
+    wire [32:0] tmp1;
+    wire [32:0] tmp_out;
+    assign tmp0 =  {data0[31],data0};
+    assign tmp1 = {data1[31],data1};
+
     always@(*)
     begin
         case(opcode)
@@ -37,13 +43,15 @@ module alu(
             end
             _ADD:
             begin
-                outdata <= data0 + data1;
-                ovf = data0[31]^data1[31]^outdata[31];
+                tmp_out <= tmp0 + tmp1;
+                ovf <= tmp_out[32] ^ tmp_out[31];
+                outdata <= tmp_out[31:0];
             end 
             _SUB:
             begin
                 outdata <= data0 - data1;
-                ovf = data0[31]^data1[31]^outdata[31];
+                ovf <= tmp_out[32] ^ tmp_out[31];
+                outdata <= tmp_out[31:0];
                 EQ <= 1'b0;
                 NE <= 1'b0;
                 GT <= 1'b0;
