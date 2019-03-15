@@ -8,7 +8,11 @@ module MEM(
     input [31:0] load_data,
     output [31:0] store_data,
     inout mres,
-    output reg mreq
+    output reg mreq,
+    output adel,
+    output ades,
+    output [31:0] epc,
+    output [31:0] e_addr
 );
     wire [31:0] addr;
     wire [31:0] store_data;
@@ -23,25 +27,50 @@ module MEM(
     wire [10:0] wb_through;
     assign {read,write,len,un,wb_through,addr,exe_result} = EXE_MEM_BUS;
     assign addr_mem = addr[9:2];
+    always @(*)
+    begin
+        case(len)
+            2'b01:
+                if(~addr[0])
+                begin
+                    adel <= read;
+                    ades <= write;
+                end
+            2'b10:
+                if(~addr[0] | ~addr[1])
+                begin
+                    adel <= read;
+                    ades <= write;
+                end
+            default:
+                adel <= 0;
+                ades <= 0;
+        endcase
+    end
+    wire va;
+    assign va = adel | ades;
     // 写逻辑
-    /*assign w_mem = wirte ? {len[0]&addr[1]&add[0],len[0]&addr[1]&~addr[0],len[0]&~addr[1]&~addr[0],len[0]&~addr[1]&~addr[0]}
+    /*assign w_mem = write ? {len[0]&addr[1]&add[0],len[0]&addr[1]&~addr[0],len[0]&~addr[1]&~addr[0],len[0]&~addr[1]&~addr[0]}
         |{{2{len[1]&addr[1]}},{2{len[1]&~addr[1]}}}
         |{4{len[2]}} : 4'b0;*/
     assign store_data = exe_result;
     always @(*)
     begin
-        if (write & ~mreq)
+        if (~va & ~mreq)
         begin
-            case(len)
-                2'b00:
-                    w_mem <= addr[1:0];
-                2'b01:
-                    begin
-                        w_mem <= addr[1] ? 4'b0011 : 4'b1100;
-                    end
-                2'b10:
-                    w_mem <= 4'b1111;
-            endcase
+            if(write)
+            begin
+                case(len)
+                    2'b00:
+                        w_mem <= addr[1:0];
+                    2'b01:
+                        begin
+                            w_mem <= addr[1] ? 4'b0011 : 4'b1100;
+                        end
+                    2'b10:
+                        w_mem <= 4'b1111;
+                endcase
+            end
             mreq = 1;
         end
     end

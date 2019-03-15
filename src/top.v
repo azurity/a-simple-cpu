@@ -37,7 +37,15 @@ wire [31:0] reg_0;
 wire [31:0] reg_1;
 wire [31:0] wb_data;
 //
+wire jump_exception; // 取指意外，仅会在跳转时发生
+wire syscall_exception;
+wire break_exception;
 wire of_exception;
+wire [31:0] exe_epc;
+wire m_el_exception;
+wire m_es_exception;
+wire [31:0] m_epc;
+wire [31:0] m_bva;
 //
 //
 FETCH fetch(
@@ -55,7 +63,8 @@ EXE exe(
     .EXE_MEM_BUS(EXE_MEM_BUS),
     .addr(jump_addr),
     .jump(jump),
-    .of(of_exception)
+    .of(of_exception),
+    .epc(exe_epc)
 );
 
 MEM mem(
@@ -66,7 +75,11 @@ MEM mem(
     .load_data(ram_load),
     .store_data(ram_store),
     .mres(mres),
-    .mreq(mreq)
+    .mreq(mreq),
+    .adel(m_el_exception),
+    .ades(m_es_exception),
+    .epc(m_epc),
+    .bva(m_bva)
 );
 
 WB wb(
