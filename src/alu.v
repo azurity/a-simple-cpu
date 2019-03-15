@@ -8,17 +8,21 @@ module alu(
     output [ 3:0]   condition      //状态码      
     );   
     parameter   _OUT            = 1'h0;
-    parameter   _ADD            = 1'h2;
-    parameter   _SUB            = 1'h3;
-    parameter   _AND            = 1'h4;
-    parameter   _OR             = 1'h5;
-    parameter   _NOR            = 1'h6;
-    parameter   _XOR            = 1'h7;
-    parameter   _SHITF_L_LOGIC  = 1'h8;
-    parameter   _SHITF_R_LOGIC  = 1'h9;
-    parameter   _SHITF_R_ARITH  = 1'ha;
-    parameter  _MUL             = 1'hb;
-    parameter  _DIV             = 1'hc;
+    parameter   _ADD            = 1'h1;
+    parameter   _SUB            = 1'h2;
+    parameter   _AND            = 1'h3;
+    parameter   _OR             = 1'h4;
+    parameter   _NOR            = 1'h5;
+    parameter   _XOR            = 1'h6;
+    parameter   _SHITF_L_LOGIC  = 1'h7;
+    parameter   _SHITF_R_LOGIC  = 1'h8;
+    parameter   _SHITF_R_ARITH  = 1'h9;
+    parameter  _MUL             = 1'ha;
+    parameter  _DIV             = 1'hb;
+    parameter  _MULU            = 1'hc;
+    parameter  _DIVU            = 1'hd;
+    parameter  _SLT             = 1'he;
+    parameter  _SLTU            = 1'hf;
     wire [4:0]    shf;
     assign shf = data1[4:0];
     wire [31:0] shf_temp_1;
@@ -126,6 +130,14 @@ module alu(
 
             end
             _DIV:
+            begin
+
+            end
+            _SLT:
+            begin
+
+            end
+            _SLT_signal:
             begin
 
             end
