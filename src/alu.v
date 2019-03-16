@@ -17,9 +17,9 @@ module alu(
     parameter   _SHITF_L_LOGIC  = 1'h7;
     parameter   _SHITF_R_LOGIC  = 1'h8;
     parameter   _SHITF_R_ARITH  = 1'h9;
-    parameter  _MUL             = 1'ha;
+    parameter  _MULT            = 1'ha;
     parameter  _DIV             = 1'hb;
-    parameter  _MULU            = 1'hc;
+    parameter  _MULTU           = 1'hc;
     parameter  _DIVU            = 1'hd;
     parameter  _SLT             = 1'he;
     parameter  _SLTU            = 1'hf;
@@ -53,7 +53,7 @@ module alu(
             end 
             _SUB:
             begin
-                outdata <= data0 - data1;
+                tmp_out <= data0 - data1;
                 ovf <= tmp_out[32] ^ tmp_out[31];
                 outdata <= tmp_out[31:0];
                 EQ <= 1'b0;
@@ -117,7 +117,7 @@ module alu(
             _SHITF_R_ARITH:
             begin
                // outdata = ($signed(data0)) >>> data1;
-                shf_tmp_1 <= shf[0]?{( 1{data0[31]}},data0    [31:1]}:data0;
+                shf_tmp_1 <= shf[0]?{{ 1{data0[31]}},data0    [31:1]}:data0;
                 shf_tmp_2 <= shf[1]?{{ 2{data0[31]}},shf_tmp_1[31:2]}:shf_tmp_1;
                 shf_tmp_3 <= shf[2]?{{ 4{data0[31]}},shf_tmp_2[31:4]}:shf_tmp_2;
                 shf_tmp_4 <= shf[3]?{{ 8{data0[31]}},shf_tmp_3[31:8]}:shf_tmp_3;
@@ -125,7 +125,7 @@ module alu(
                 outdata <= shf_tmp_5;
                 ovf = 0;
             end
-            _MUL:
+            _MULT:
             begin
 
             end
@@ -133,14 +133,25 @@ module alu(
             begin
 
             end
-            _SLT:
+            _MULTU:
             begin
 
             end
-            _SLT_signal:
+            _DIVU:
             begin
 
             end
+             _SLT:
+            begin
+                tmp_out <= data0 - data1;
+                ovf <= tmp_out[32] ^ tmp_out[31];
+                outdata <= {32{tmp_out[32]}};
+            end 
+            _SLTU:
+            begin
+                outdata <={32{(data0>data1)?1:0}};
+                ovf = 0;
+            end 
         endcase
     end
 endmodule
