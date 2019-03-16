@@ -3,6 +3,7 @@
 module EXE(
     input [183:0] ID_EXE_BUS,
     output [109:0] EXE_MEM_BUS,
+    input [29:0] PC_ADD_8,
     output [29:0] addr,
     output jump,
     output of,
@@ -47,7 +48,7 @@ module EXE(
             2'b00:
                 out_data <= alu_data;
             2'b01:
-                out_data <= {addr,2'b0};
+                out_data <= {PC_ADD_8,2'b0};
             default:
                 out_data <= data2;
         endcase

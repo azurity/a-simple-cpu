@@ -9,7 +9,8 @@ reg [61:0] IF_ID_BUS_REG;
 reg [183:0] ID_EXE_BUS_REG;
 reg [79:0] EXE_MEM_BUS_REG;
 reg [42:0] MEM_WB_BUS_REG;
-wire [61:0] IF_ID_BUS_REG;
+reg [29:0] PC_ADD_8_REG;
+wire [61:0] IF_ID_BUS;
 wire [183:0] ID_EXE_BUS;
 wire [79:0] EXE_MEM_BUS;
 wire [42:0] MEM_WB_BUS;
@@ -80,6 +81,7 @@ begin
         if(id_finish & exe_valid)
         begin
             ID_EXE_BUS_REG = ID_EXE_BUS;
+            PC_ADD_8_REG = nextPC; // 需要保证瞬间赋值
         end
         if(exe_finish & mem_valid)
         begin
