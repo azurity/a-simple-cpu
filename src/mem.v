@@ -12,7 +12,10 @@ module MEM(
     output adel,
     output ades,
     output [31:0] epc,
-    output [31:0] e_addr
+    output [31:0] e_addr,
+    input next_valid,
+    output valid,
+    output finish
 );
     wire [31:0] addr;
     wire [31:0] store_data;
@@ -56,7 +59,7 @@ module MEM(
     assign store_data = exe_result;
     always @(*)
     begin
-        if (~va & ~mreq)
+        if (~va & ~mreq) // 真的需求
         begin
             if(write)
             begin
@@ -71,13 +74,23 @@ module MEM(
                         w_mem <= 4'b1111;
                 endcase
             end
-            mreq = 1;
+            if(read | write) mreq = 1;
+            else
+            begin
+                valid <= next_valid;
+                finish <= 1;
+            end
+        end
+        if (va)
+        begin
+            finish <= 1;
+            // TODO: do sth. process error
         end
     end
     // 读逻辑
     always @(*)
     begin
-        if(mres)
+        if(mres & mreq) // 真的完成
             case(len)
                 2'b00:
                     begin
@@ -105,8 +118,10 @@ module MEM(
                     mem_result <= load_data;
             endcase
             mreq = 0;
+            finish <= 1;
         end
     end
+    assign valid = finish & next_valid;
     assign result = read ? mem_result : exe_result;
     assign MEM_WB_BUS = {wb_through,result};
 endmodule

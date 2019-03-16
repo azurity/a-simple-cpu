@@ -8,7 +8,9 @@ module WB(
     output cp0_en,
     output [4:0] rd,
     output [2:0] sel,
-    output [31:0] w_data
+    output [31:0] w_data,
+    output valid,
+    output finish
 );
     wire en;
     wire [1:0] aim;
@@ -17,4 +19,6 @@ module WB(
     assign lo_en = en & ~aim[1] & aim[0];
     assign hi_en = en & aim[1] & ~aim[0];
     assign cp0_en = en & aim[1] & aim[0];
+    assign valid = 1;
+    assign finish = 1;
 endmodule
