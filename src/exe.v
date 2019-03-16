@@ -6,12 +6,15 @@ module EXE(
     output [29:0] addr,
     output jump,
     output of,
-    output [31:0] epc
+    output [31:0] epc,
     //lo,hi
+    input next_valid,
+    output valid,
+    output finish
 );
     wire [4:0] cond;
     wire [3:0] opcode;
-    wire of_shield;
+    wire of_allow;
     wire [1:0] data_switch;
     wire [15:0] through;
     wire [29:0] pc;
@@ -19,7 +22,7 @@ module EXE(
     wire [31:0] data0;
     wire [31:0] data1;
     wire [31:0] data2;
-    assign {cond,opcode,of_shield,data_switch,thorugh,pc,offset,data0,data1,data2} = ID_EXE_BUS;
+    assign {cond,opcode,of_allow,data_switch,thorugh,pc,offset,data0,data1,data2} = ID_EXE_BUS;
     assign epc = {pc,2'b0};
     wire [31:0] alu_data;
     wire ovf;
@@ -33,9 +36,10 @@ module EXE(
         .data1(data1),
         .out_data(alu_data),
         .ovf(ovf),
-        condition(condition)
+        condition(condition),
+        finish(finish)
     );
-    assign of = ovf & ~of_shield;
+    assign of = ovf & of_allow;
     assign jump = (|(cond & {1'b1,condition}));
     always @(*)
     begin
@@ -49,5 +53,6 @@ module EXE(
         endcase
     end
     //
+    assign valid = finish & next_valid;
     assign EXE_MEM_BUS = {through,alu_data,out_data,pc};
 endmodule

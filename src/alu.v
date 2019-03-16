@@ -5,7 +5,8 @@ module alu(
     input  [31:0]   data1,         //输入数据B
     output [31:0]   out_data,      //输出结果
     output reg      ovf,           //溢出标志位
-    output [ 3:0]   condition      //状态码      
+    output [ 3:0]   condition,     //状态码
+    output          finish         //完成
     );   
     parameter   _OUT            = 1'h0;
     parameter   _ADD            = 1'h1;
