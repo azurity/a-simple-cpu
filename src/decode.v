@@ -1,14 +1,21 @@
 `timescale 1ns / 1ps
-module decode(
+module DECODE(
         input  [ 61:0]   IF_ID_BUS,
         input  [ 31:0]   r_data0,
         input  [ 31:0]   r_data1,
-        output [4:0]     rs,
-        output [4:0]     rt,
+        output [4:0]     output_rs,
+        output [4:0]     output_rt,
+        output [4:0]     output_rd,
+        output [2:0]     sel,
         output [183:0]   ID_EXE_BUS,
+        input  [30:0]    cp0,
+        input  [30:0]    LO,
+        input  [30:0]    HI,
         output _break,
         output _syscall,
-        output _error_throw
+        output _error_throw,
+        output [ 3:0]   lockreq,
+        output [31:0]   epc
     );
     wire [31:0]  ins;
     wire [29:0]  pc;
@@ -102,10 +109,10 @@ module decode(
     assign inst_JALR  = op_zero & (rt==5'd0) & (rd==5'd31) & sa_zero & (funct == 6'b001001);          //跳转寄存器并链接 
     assign inst_JR    = op_zero & (rt==5'd0) & (rd==5'd0 ) & sa_zero & (funct == 6'b001000);             //跳转寄存器
     assign inst_BGEZAL= (opcode == 6'b000001) & (rt == 5'b10001);
-    assign inst_BTLZAL= (opcode == 6'b000001) & (rt == 5'b10000);
+    assign inst_BLTZAL= (opcode == 6'b000001) & (rt == 5'b10000);
 
     assign jump_op    = inst_BEQ | inst_BGEZ | inst_BGTZ | inst_BLEZ | inst_BLTZ | inst_BNE | 
-                        inst_J   | inst_JAL  | inst_JALR | inst_JR   | inst_BGEZAL | inst_BTLZAL;
+                        inst_J   | inst_JAL  | inst_JALR | inst_JR   | inst_BGEZAL | inst_BLTZAL;
 
     assign inst_MFHI  = op_zero & (rs == 5'b0) & (rt == 5'b0) & sa_zero & (funct == 6'b010000);
     assign inst_MFLO  = op_zero & (rs == 5'b0) & (rt == 5'b0) & sa_zero & (funct == 6'b010010);
@@ -136,21 +143,117 @@ module decode(
 
     assign privilege_op = inst_REST | inst_MFC0 | inst_MTC0;
 
+    wire branch;
+    assign branch = inst_BEQ | inst_BNE | inst_BGEZ | inst_BGEZAL | inst_BGTZ | inst_BLEZ | inst_BLTZ | inst_BLTZAL;
+
     assign _error_throw = ~(arithmetic_op | logic_op | shift_op | jump_op | datamov_op | trap_op | fetch_op | privilege_op);
     //alu操作分类
     wire alu_add, alu_sub, alu_slt,alu_sltu;
     wire alu_and, alu_nor, alu_or, alu_xor;
     wire alu_sll, alu_srl, alu_sra;
-    assign alu_add = inst_ADD | inst_ADDI | inst_ADDU | inst_ADDIU;    // 做加法
-    assign alu_sub = inst_SUB | inst_SUBU;                            // 减法
-    assign alu_slt = inst_SLT | inst_SLTI;                 // 有符号小于置位
-    assign alu_sltu= inst_SLTIU | inst_SLTU;               // 无符号小于置位
-    assign alu_and = inst_AND | inst_ANDI;                 // 逻辑与
-    assign alu_nor = inst_NOR;                             // 逻辑或非
-    assign alu_or  = inst_OR  | inst_ORI;                  // 逻辑或
-    assign alu_xor = inst_XOR | inst_XORI;                 // 逻辑异或
-    assign alu_sll = inst_SLL | inst_SLLV;                 // 逻辑左移
-    assign alu_srl = inst_SRL | inst_SRLV;                 // 逻辑右移
-    assign alu_sra = inst_SRA | inst_SRAV;                 // 算术右移
+    wire alu_mult,alu_mutu,alu_div,alu_divu;
+    assign alu_add   = inst_ADD | inst_ADDI | inst_ADDU | inst_ADDIU;    // 做加法
+    assign alu_sub   = inst_SUB | inst_SUBU | branch;                    // 减法
+    assign alu_slt   = inst_SLT | inst_SLTI;                 // 有符号小于置位
+    assign alu_sltu  = inst_SLTIU | inst_SLTU;               // 无符号小于置位
+    assign alu_and   = inst_AND | inst_ANDI;                 // 逻辑与
+    assign alu_nor   = inst_NOR;                             // 逻辑或非
+    assign alu_or    = inst_OR  | inst_ORI;                  // 逻辑或
+    assign alu_xor   = inst_XOR | inst_XORI;                 // 逻辑异或
+    assign alu_sll   = inst_SLL | inst_SLLV;                 // 逻辑左移
+    assign alu_srl   = inst_SRL | inst_SRLV;                 // 逻辑右移
+    assign alu_sra   = inst_SRA | inst_SRAV;                 // 算术右移
+    assign alu_mult  = inst_MULT;                            // 有符号乘法
+    assign alu_multu = inst_MULTU;                           // 无符号乘法
+    assign alu_div   = inst_DIV;                             // 有符号除法
+    assign alu_divu  = inst_DIVU;                            // 无符号除法
+    
+     //使用sa域作为偏移量的移位指令
+    wire inst_shf_sa;
+    assign inst_shf_sa =  inst_SLL | inst_SRL | inst_SRA;
+
+    wire [3:0] alu_opcode;
+    assign alu_opcode[3] = alu_srl | alu_sra | alu_mult| alu_div | alu_multu| alu_divu| alu_slt  | alu_sltu;
+    assign alu_opcode[2] = alu_or  | alu_nor | alu_xor | alu_sll | alu_multu| alu_divu| alu_slt  | alu_sltu;
+    assign alu_opcode[1] = alu_sub | alu_and | alu_xor | alu_sll | alu_mult | alu_div | alu_slt  | alu_sltu;
+    assign alu_opcode[0] = alu_add | alu_and | alu_nor | alu_sll | alu_sra  | alu_div | alu_divu | alu_sltu;
+
+    wire [4:0]cond;
+    assign cond[4] = inst_J | inst_JAL | inst_JALR | inst_JR;
+    assign cond[3] = inst_BEQ | inst_BGEZ | inst_BLEZ | inst_BGEZAL;
+    assign cond[2] = inst_BNE;
+    assign cond[1] = inst_BGTZ | inst_BGEZ | inst_BGEZAL;
+    assign cond[0] = inst_BLTZ | inst_BLEZ | inst_BLTZAL;
+
+    wire of_allow;
+    assign of_allow = inst_ADD | inst_ADDI | inst_SUB;
+
+    wire [1:0] data_switch;
+    assign data_switch[0] = inst_BGEZAL | inst_BLTZAL | inst_JAL | inst_JALR;
+    assign data_switch[1] = inst_SB     | inst_SH     | inst_SW  | inst_MFHI | inst_MFLO | inst_MFC0; 
+    
+    wire read,write;
+    wire [1:0] len;
+    wire un;
+    wire en;
+    wire [ 1:0] aim;
+    wire [29:0]offset;
+
+    assign read = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LUI | inst_LW;
+    assign write = inst_SB | inst_SH | inst_SW;
+
+    assign len[1] = inst_LW | inst_SW;
+    assign len[0] = inst_LH | inst_LHU | inst_SH;
+
+    assign un = inst_LBU | inst_LHU;
+    assign en = arithmetic_op | logic_op | shift_op | data_switch[0] | read | datamov_op | inst_MFC0 | inst_MTC0;
+    assign aim[1] = inst_MTHI | inst_MTC0;
+    assign aim[0] = inst_MTLO | inst_MTC0;
+    
+    wire rd_is_rt,rd_is_rd,rd_is_31;
+    assign rd_is_31 = inst_BGEZAL | inst_BLTZAL | inst_JAL;
+    assign rd_is_rt = inst_ADDI | inst_ADDIU | inst_SLTI | inst_SLTIU | inst_ANDI | inst_LUI  | inst_ORI | isnt_XORI | read      | inst_MFC0;
+    assign rd_is_rd = inst_ADD  | inst_ADDU  | inst_SUB  | inst_SUBU  | inst_SLT  | isnt_SLTU | inst_DIV | inst_DIVU | inst_MULT | inst_MULTU |
+                      inst_AND  | inst_NOR   | inst_OR   | inst_XOR   | shift_op  | inst_JALR | inst_MFHI| inst_MFLO | inst_MTC0;
+
+    always @(*)
+    begin
+        if(rd_is_31) output_rd <= 5'b11111;
+        else if(rd_is_rt) output_rd <= rt;
+        else if(rd_is_rd) output_rd <= rd;
+        else output_rd <= 5'b0;
+    end
+
+    assign sel = ins[2:0];
+    
+    wire output_pc_is_index,output_pc_is_rs;
+    wire [29:0] output_pc;
+    assign output_pc_is_index = inst_J | inst_JAL;
+    assign output_pc_is_rs = inst_JR   | inst_JALR;
+    always @(*)
+    begin
+        if(output_pc_is_index) output_pc <= {pc[29:26],ins[25:0]};
+        else if(output_pc_is_rs) output_pc <= r_data0;
+        else output_pc <= pc;
+    end
+
+    assign offset = branch?{{14{ins[15]}},ins[15:0]}:30'b0;
+
+    wire [31:0] data0;
+    wire [31:0] data1;
+    wire [31:0] data2;
+    always @(*)
+    begin
+        if(inst_MFC0)data0 <= CP0;
+        else if(inst_MTC0)data0 <= r_data1;
+        else if(inst_MFLO)data0 <= LO;
+        else if(inst_MFHI)data0 <= HI;
+        else data0 <= r_data0;
+    end
+    always @(*)
+    begin
+        if(inst_ERET | inst_J | inst_JAL | inst_BREAK | inst_SYSCALL)output_rs <= 5'b0;
+        else output_rs <= rs;
+    end
     
 endmodule
