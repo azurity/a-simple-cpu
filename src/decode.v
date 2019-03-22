@@ -5,17 +5,27 @@ module DECODE(
         input  [ 31:0]   r_data1,
         output [4:0]     output_rs,
         output [4:0]     output_rt,
-        output [4:0]     output_rd,
-        output [2:0]     sel,
+        output [4:0]     output_rd,//not must
+        output [2:0]     sel,//not must
         output [183:0]   ID_EXE_BUS,
-        input  [30:0]    cp0,
-        input  [30:0]    LO,
-        input  [30:0]    HI,
+        input  [31:0]    cp0,
+        input  [31:0]    LO,
+        input  [31:0]    HI,
         output _break,
         output _syscall,
         output _error_throw,
-        output [ 3:0]   lockreq,
-        output [31:0]   epc
+        output j_exp,
+        output [2:0] lockreq,
+        input  [2:0] lockres,
+        //output [ 3:0]   lockreq,
+        output [31:0]   epc,
+        input rs_allow,
+        input rt_allow,
+        output [4:0] lock_rd,
+        output [2:0] lock_sel,
+        input next_valid,
+        output valid,
+        output finish
     );
     wire [31:0]  ins;
     wire [29:0]  pc;
@@ -233,7 +243,11 @@ module DECODE(
     always @(*)
     begin
         if(output_pc_is_index) output_pc <= {pc[29:26],ins[25:0]};
-        else if(output_pc_is_rs) output_pc <= r_data0;
+        else if(output_pc_is_rs)
+        begin
+            output_pc <= r_data0[31:2];
+            j_exp <= (|r_data0[1:0]);
+        end
         else output_pc <= pc;
     end
 
@@ -278,5 +292,13 @@ module DECODE(
         if(inst_SB | inst_SH | inst_SW)data2 <= r_data1;
         else data2 <= 32'b0;
     end
-    
+    assign ID_EXE_BUS = {cond,alu_opcode,of_allow,data_switch,read,write,len,un,en,aim,output_rd,sel,output_pc,offset,data0,data1,data2};
+    assign epc = {pc,2'b0);
+    assign finish = rs_allow & rt_allow & (&lockres);
+    assign valid = finish & next_valid;
+    assign lock_rd = ((aim == 2'b0) & finish ? output_rd : 5'b0);
+    assign lock_sel = ((aim == 2'b11) & finish ? sel : 3'b0);
+    assign lockreq[2] = inst_MFC0;
+    assign lockreq[1] = inst_MFHI;
+    assign lockreq[0] = inst_MFLO;
 endmodule

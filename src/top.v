@@ -2,7 +2,8 @@
 
 module CPU(
     input clk,
-    input reset
+    input reset,
+    input [5:0] hw
 );
 // 全局线
 reg [61:0] IF_ID_BUS_REG;
@@ -14,7 +15,7 @@ wire [61:0] IF_ID_BUS;
 wire [183:0] ID_EXE_BUS;
 wire [79:0] EXE_MEM_BUS;
 wire [42:0] MEM_WB_BUS;
-wire [29:0] PC;
+reg [29:0] PC;
 wire [29:0] nextPC;
 wire [31:0] ins;
 wire [29:0] jump_addr;
@@ -38,6 +39,14 @@ wire [2:0] sel;
 wire [31:0] reg_0;
 wire [31:0] reg_1;
 wire [31:0] wb_data;
+reg [31:0] lock_wire;
+wire [4:0] lock_rd;
+wire [2:0] lock_sel;
+wire rs_allow;
+wire rt_allow;
+reg [5:0] lock_wire_sp;
+wire [2:0] lockreq;
+wire [2:0] lockres;
 // 异常
 reg interrupt; // 中断例外
 wire jump_exception; // 取指例外，仅会在跳转时发生
@@ -58,11 +67,14 @@ wire id_valid,id_finish;
 wire exe_valid,exe_finish;
 wire mem_valid,mem_finish;
 wire wb_valid,wb_finish;
-// CP0寄存器
+// 特殊寄存器
+reg [31:0] HI;
+reg [31:0] LO;
 reg [31:0] badVAddr;
 reg [31:0] status;
 reg [31:0] cause;
 reg [31:0] epc;
+wire cp0;
 //
 assign execption = jump_exception | ri_exception | syscall_exception | break_exception | of_exception | m_el_exception | m_es_exception;
 //
@@ -72,32 +84,12 @@ begin
     begin
         //
     end
-    if(execption | interrupt) // TODO: 需要保证一次处理一条异常
-    begin
-        if(if_finish & id_valid)
-        begin
-            IF_ID_BUS_REG = IF_ID_BUS;
-        end
-        if(id_finish & exe_valid)
-        begin
-            ID_EXE_BUS_REG = ID_EXE_BUS;
-            PC_ADD_8_REG = nextPC; // 需要保证瞬间赋值
-        end
-        if(exe_finish & mem_valid)
-        begin
-            EXE_MEM_BUS_REG = EXE_MEM_BUS;
-        end
-        if(mem_finish & wb_valid)
-        begin
-            MEM_WB_BUS_REG = MEM_WB_BUS;
-        end
-    end
-    else
+    if((execption | interrupt) & ~status[1]) // TODO: 需要保证一次处理一条异常
     begin
         if(interrupt)
         begin
             cause[6:2] = 5'b00000;
-            //epc = ?;
+            epc = PC;
         end
         else if(jump_exception)
         begin
@@ -114,7 +106,7 @@ begin
         begin
             if(of_exception)
             begin
-                casue[6:2] = 5'b01100;
+                cause[6:2] = 5'b01100;
                 epc = exe_epc;
             end
             if(syscall_exception)
@@ -135,16 +127,128 @@ begin
             badVAddr = m_bva;
             epc = m_epc;
         end
-        // TODO:
+        // TODO: 跳转
+    end
+    else
+    begin
+        if(if_valid)
+        begin
+            PC = nextPC+1;
+        end
+        if(if_finish & id_valid)
+        begin
+            IF_ID_BUS_REG = IF_ID_BUS;// 如果exe为jump,此处为nop
+        end
+        if(id_finish & exe_valid)
+        begin
+            ID_EXE_BUS_REG = ID_EXE_BUS;
+            PC_ADD_8_REG = nextPC; // 需要保证瞬间赋值
+        end
+        if(exe_finish & mem_valid)
+        begin
+            EXE_MEM_BUS_REG = EXE_MEM_BUS;
+        end
+        if(mem_finish & wb_valid)
+        begin
+            MEM_WB_BUS_REG = MEM_WB_BUS;
+        end
+    end
+end
+//decode填值
+always @(*)
+begin
+    if(sel == 3'b0)
+    begin
+        if(lock_rd == 8) cp0 <= badVAddr;
+        else if（lock_rd == 12) cp0 <= status;
+        else if（lock_rd == 13) cp0 <= cause;
+        else if（lock_rd == 14) cp0 <= epc;
+        else cp0 <= 31'b0;
+    end
+    else cp0 <= 31'b0;
+end
+//寄存器锁
+always @(posedge clk)
+begin
+    if(lock_rd != 5'b0) lock_wire[lock_rd] = 1;
+    if(reg_en) lock_wire[rd] = 0;
+    lock_wire_sp[1:0] |= lockreq[1:0];
+    if(lockreq[2])
+    begin
+        if(lock_sel == 3'b0)
+        begin
+            if(lock_rd == 8) lock_wire_sp[2] = 1;
+            else if（lock_rd == 12) lock_wire_sp[3] = 1;
+            else if（lock_rd == 13) lock_wire_sp[4] = 1;
+            else if（lock_rd == 14) lock_wire_sp[5] = 1;
+        end
+    end
+    if(cp0_en)
+    begin
+        if(sel == 3'b0)
+        begin
+            if(rd == 8) lock_wire_sp[2] = 0;
+            else if（rd == 12) lock_wire_sp[3] = 0;
+            else if（rd == 13) lock_wire_sp[4] = 0;
+            else if（rd == 14) lock_wire_sp[5] = 0;
+        end
+    end
+    if(hi_en) lockreq[1] = 0;
+    if(lo_en) lockreq[0] = 0;
+end
+assign rs_allow = ~lock_wire[rs];
+assign rt_allow = ~lock_wire[rt];
+assign lockres[1:0] = ~lock_wire_sp[1:0];
+always @(*)
+begin
+    if(sel == 3'b0)
+    begin
+        if(rd == 8)  lockres[2]=lock_wire_sp[2];
+        else if（rd == 12) lockres[2]=lock_wire_sp[3];
+        else if（rd == 13) lockres[2]=lock_wire_sp[4];
+        else if（rd == 14) lockres[2]=lock_wire_sp[5];
+        else lockres[2] = 0;
+    end
+    else lockres[2] = 0;
+end
+//跳转逻辑
+assign nextPC = jump? jump_addr : PC;
+//中断
+always @(hw)
+begin
+    if(status[0] & ~status[1])
+    begin
+        cause[15:10] = hw[5:0] & status[15:10];
+    end
+end
+//写特殊寄存器
+always @(posedge clk)
+begin
+    if(hi_en) HI = wb_data;
+    if(lo_en) LO = wb_data;
+    if(cp0_en)
+    begin
+        if(sel == 3'b0)
+        begin
+            //if(rd == 8) badVAddr = wb_data; 只读
+            if（rd == 12)
+            begin
+                status = {16'b0,wb_data[15:8],6'b0,wb_data[1:0]};
+            end
+            else if（rd == 13)
+            begin
+                cause = {cause[31],15'b0,cause[15:10],wb_data[9:8],1'b0,cause[6:2],2'b0};
+            end
+            else if（rd == 14) epc = wb_data;
+        end
     end
 end
 //
 FETCH fetch(
     .clk(clk),
-    .reset(reset),
+    .input_pc(nextPC),
     .data(ins),
     .IF_ID_BUS(IF_ID_BUS),
-    .nextPC(nextPC),
     .next_valid(id_valid),
     .valid(if_valid),
     .finish(if_finish)
@@ -154,13 +258,27 @@ DECODE decode(
     .IF_ID_BUS(IF_ID_BUS_REG),
     .r_data0(reg_0),
     .r_data1(reg_1),
-    .rs(rs),
-    .rt(rt),
+    .output_rs(rs),
+    .output_rt(rt),
+    //.output_rd(),
     .ID_EXE_BUS(ID_EXE_BUS),
+    .cp0(cp0),
+    .LO(LO),
+    .HI(HI),
     ._break(break_exception),
     ._syscall(syscall_exception),
     ._error_throw(ri_exception),
-    .epc(id_epc)
+    .j_exp(jump_exception),
+    .lockreq(lockreq),
+    .lockres(lockres),
+    .epc(id_epc),
+    .rs_allow(rs_allow),
+    .rt_allow(rt_allow),
+    .lock_rd(lock_rd),
+    .lock_sel(lock_sel),
+    .next_valid(exe_valid),
+    .valid(id_valid),
+    .finish(id_finish)
 );
 
 EXE exe(
@@ -226,7 +344,7 @@ blk_mem_gen_0 RAM(
 
 blk_mem_gen_1 ROM(
     .clka(clk),
-    .addra(PC[7:0]),
+    .addra(nextPC[7:0]),
     .douta(ins)
 );
 endmodule
