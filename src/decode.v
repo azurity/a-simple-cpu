@@ -199,7 +199,7 @@ module DECODE(
     wire [ 1:0] aim;
     wire [29:0]offset;
 
-    assign read = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LUI | inst_LW;
+    assign read = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW;
     assign write = inst_SB | inst_SH | inst_SW;
 
     assign len[1] = inst_LW | inst_SW;
@@ -228,8 +228,8 @@ module DECODE(
     
     wire output_pc_is_index,output_pc_is_rs;
     wire [29:0] output_pc;
-    assign output_pc_is_index = inst_J | inst_JAL;
-    assign output_pc_is_rs = inst_JR   | inst_JALR;
+    assign output_pc_is_index = inst_J  | inst_JAL;
+    assign output_pc_is_rs    = inst_JR | inst_JALR;
     always @(*)
     begin
         if(output_pc_is_index) output_pc <= {pc[29:26],ins[25:0]};
@@ -254,6 +254,29 @@ module DECODE(
     begin
         if(inst_ERET | inst_J | inst_JAL | inst_BREAK | inst_SYSCALL)output_rs <= 5'b0;
         else output_rs <= rs;
+    end
+    
+    wire rt_is_imm,rt_is_sa;
+    assign rt_is_imm = inst_ADDI | inst_ADDIU | inst_SLTI | inst_SLTIU | inst_ANDI | inst_ORI | inst_XORI;
+    assign rt_is_sa = inst_SRL| inst_SRA | inst_SLL;
+    always @(*)
+    begin
+        if(rt_is_imm)data1 <= {{16{imm[15]}},imm};
+        else if(rt_is_sa)data1 <= {27'b0,sa};
+        else if(inst_LUI)data1 <= {imm,16'b0};
+        else data1 <= r_data1;
+    end
+    always @ (*)
+    begin
+        if(rt_is_imm | rt_is_sa | inst_BGEZ | inst_BGTZ | 
+           inst_BLEZ | inst_BLTZ | inst_BGEZAL | inst_BLTZAL | inst_J | 
+           inst_JAL  | inst_JR | inst_JALR | datamov_op | trap_op | read | inst_MFC0)output_rt <= 5'b0;
+        else output_rt <= rt;
+    end
+    always @(*)
+    begin
+        if(inst_SB | inst_SH | inst_SW)data2 <= r_data1;
+        else data2 <= 32'b0;
     end
     
 endmodule
