@@ -5,6 +5,8 @@ module CPU(
     input reset,
     input [5:0] hw
 );
+// explain: 同时只能触发一个异常，（多个算一个）
+parameter EXCEPT_ADDR = 30'b0; // TODO:
 // 全局线
 reg [61:0] IF_ID_BUS_REG;
 reg [183:0] ID_EXE_BUS_REG;
@@ -61,6 +63,7 @@ wire m_es_exception; // store例外
 wire [31:0] m_epc;
 wire [31:0] m_bva;
 wire execption;
+wire eret;
 // 互锁
 wire if_valid,if_finish;
 wire id_valid,id_finish;
@@ -76,16 +79,20 @@ reg [31:0] cause;
 reg [31:0] epc;
 wire cp0;
 //
+reg [3:0] exptyp = 4'b1111; // 控制异常时期流水 & 控制reset
+//
 assign execption = jump_exception | ri_exception | syscall_exception | break_exception | of_exception | m_el_exception | m_es_exception;
+assign interrupt = (|(cause[15:8] & status[15:8])) & status[0];
 //
 always @(posedge clk)
 begin
-    if(status[0])
+    if(eret)
     begin
-        //
+        status[1] = 0;
     end
-    if((execption | interrupt) & ~status[1]) // TODO: 需要保证一次处理一条异常
+    if((execption | interrupt) & ~status[1]) // 需要保证一次处理一条异常 finish
     begin
+        status[1] = 1;
         if(interrupt)
         begin
             cause[6:2] = 5'b00000;
@@ -96,10 +103,12 @@ begin
             cause[6:2] = 5'b00100;
             badVAddr = {jump_addr,2'b0};
             epc = exe_epc;
+            exptyp = 4'b1100;
         end
         else if(ri_exception)
             cause[6:2] = 5'b01010;
             epc = id_epc;
+            exptyp = 4'b1100;
         begin
         end
         else if(of_exception | syscall_exception | break_exception)
@@ -108,16 +117,19 @@ begin
             begin
                 cause[6:2] = 5'b01100;
                 epc = exe_epc;
+                exptyp = 4'b1000;
             end
             if(syscall_exception)
             begin
                 cause[6:2] = 5'b01000;
                 epc = id_epc;
+                exptyp = 4'b1100;
             end
             if(break_exception)
             begin
                 cause[6:2] = 5'b01001;
                 epc = id_epc;
+                exptyp = 4'b1100;
             end
         end
         else if(m_el_exception | m_es_exception)
@@ -126,29 +138,37 @@ begin
             if(m_es_exception) cause[6:2] = 5'b00101;
             badVAddr = m_bva;
             epc = m_epc;
+            exptyp = 4'b0000;
         end
-        // TODO: 跳转
+        // 跳转 finish
     end
-    else
+    // else
     begin
         if(if_valid)
         begin
             PC = nextPC+1;
         end
-        if(if_finish & id_valid)
+        if(if_finish & id_valid & exptyp[0])
         begin
-            IF_ID_BUS_REG = IF_ID_BUS;// 如果exe为jump,此处为nop
+            if(jump)
+            begin
+                IF_ID_BUS_REG = {IF_ID_BUS[61:32],32'b0};
+            end
+            else
+            begin
+                IF_ID_BUS_REG = IF_ID_BUS;// 如果exe为jump,此处为nop finish
+            end
         end
-        if(id_finish & exe_valid)
+        if(id_finish & exe_valid & exptyp[1])
         begin
             ID_EXE_BUS_REG = ID_EXE_BUS;
             PC_ADD_8_REG = nextPC; // 需要保证瞬间赋值
         end
-        if(exe_finish & mem_valid)
+        if(exe_finish & mem_valid & exptyp[2])
         begin
             EXE_MEM_BUS_REG = EXE_MEM_BUS;
         end
-        if(mem_finish & wb_valid)
+        if(mem_finish & wb_valid & exptyp[3])
         begin
             MEM_WB_BUS_REG = MEM_WB_BUS;
         end
@@ -212,14 +232,33 @@ begin
     else lockres[2] = 0;
 end
 //跳转逻辑
-assign nextPC = jump? jump_addr : PC;
+// assign nextPC = jump? jump_addr : PC;
+always @(*)
+begin
+    if(reset)
+    begin
+        nextPC = 30'b0;
+    end
+    else if((execption | interrupt) & ~status[1])
+    begin
+        nextPC <= EXCEPT_ADDR;
+    end
+    else if(eret)
+    begin
+        nextPC <= epc;
+    else
+    begin
+        nextPC <= jump? jump_addr : PC;
+    end
+end
 //中断
 always @(hw)
 begin
-    if(status[0] & ~status[1])
-    begin
-        cause[15:10] = hw[5:0] & status[15:10];
-    end
+    if(~status[1]) cause[15:10] = hw[5:0];
+    //if(status[0] & ~status[1])
+    //begin
+    //    cause[15:10] = hw[5:0] & status[15:10];
+    //end
 end
 //写特殊寄存器
 always @(posedge clk)
@@ -235,16 +274,17 @@ begin
             begin
                 status = {16'b0,wb_data[15:8],6'b0,wb_data[1:0]};
             end
-            else if（rd == 13)
+            else if（rd == 13 && ~status[1])
             begin
                 cause = {cause[31],15'b0,cause[15:10],wb_data[9:8],1'b0,cause[6:2],2'b0};
             end
-            else if（rd == 14) epc = wb_data;
+            else if（rd == 14 && ~status[1]) epc = wb_data;
         end
     end
 end
 //
 FETCH fetch(
+    .reset(exptyp[0] | reset),
     .clk(clk),
     .input_pc(nextPC),
     .data(ins),
@@ -255,6 +295,7 @@ FETCH fetch(
 );
 
 DECODE decode(
+    .reset(exptyp[1] | reset),
     .IF_ID_BUS(IF_ID_BUS_REG),
     .r_data0(reg_0),
     .r_data1(reg_1),
@@ -267,6 +308,7 @@ DECODE decode(
     .HI(HI),
     ._break(break_exception),
     ._syscall(syscall_exception),
+    ._eret(eret),
     ._error_throw(ri_exception),
     .j_exp(jump_exception),
     .lockreq(lockreq),
@@ -282,8 +324,10 @@ DECODE decode(
 );
 
 EXE exe(
+    .reset(exptyp[2] | reset),
     .ID_EXE_BUS(ID_EXE_BUS_REG),
     .EXE_MEM_BUS(EXE_MEM_BUS),
+    .PC_ADD_8(PC_ADD_8_REG),
     .addr(jump_addr),
     .jump(jump),
     .of(of_exception),
@@ -294,6 +338,7 @@ EXE exe(
 );
 
 MEM mem(
+    .reset(exptyp[3] | reset),
     .EXE_MEM_BUS(EXE_MEM_BUS_REG),
     .MEM_WB_BUS(MEM_WB_BUS),
     .w_mem(ram_en),

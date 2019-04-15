@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
 
 module MEM(
+    input reset,
     input [79:0] EXE_MEM_BUS,
     output [42:0] MEM_WB_BUS,
     output [3:0] w_mem,
@@ -17,6 +18,7 @@ module MEM(
     output valid,
     output finish
 );
+    parameter MEM_NOP = 43'b0;
     wire [31:0] addr;
     wire [31:0] store_data;
     reg [31:0] load_data;
@@ -77,7 +79,7 @@ module MEM(
             if(read | write) mreq = 1;
             else
             begin
-                valid <= next_valid;
+                // valid <= next_valid;
                 finish <= 1;
             end
         end
@@ -121,7 +123,11 @@ module MEM(
             finish <= 1;
         end
     end
-    assign valid = finish & next_valid;
+    always @(reset)
+    begin
+        mreq = 0;
+    end
+    assign valid = (finish & next_valid) | reset;
     assign result = read ? mem_result : exe_result;
-    assign MEM_WB_BUS = {wb_through,result};
+    assign MEM_WB_BUS = reset? MEM_NOP : {wb_through,result};
 endmodule

@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 module DECODE(
+        input reset,
         input  [ 61:0]   IF_ID_BUS,
         input  [ 31:0]   r_data0,
         input  [ 31:0]   r_data1,
@@ -13,6 +14,7 @@ module DECODE(
         input  [31:0]    HI,
         output _break,
         output _syscall,
+        output _eret,
         output _error_throw,
         output j_exp,
         output [2:0] lockreq,
@@ -27,6 +29,7 @@ module DECODE(
         output valid,
         output finish
     );
+    parameter DECODE_NOP = 184'b0;
     wire [31:0]  ins;
     wire [29:0]  pc;
     wire rs,rt,rd,imm;
@@ -295,10 +298,11 @@ module DECODE(
     assign ID_EXE_BUS = {cond,alu_opcode,of_allow,data_switch,read,write,len,un,en,aim,output_rd,sel,output_pc,offset,data0,data1,data2};
     assign epc = {pc,2'b0);
     assign finish = rs_allow & rt_allow & (&lockres);
-    assign valid = finish & next_valid;
+    assign valid = (finish & next_valid) | reset;
     assign lock_rd = ((aim == 2'b0) & finish ? output_rd : 5'b0);
     assign lock_sel = ((aim == 2'b11) & finish ? sel : 3'b0);
     assign lockreq[2] = inst_MFC0;
     assign lockreq[1] = inst_MFHI;
     assign lockreq[0] = inst_MFLO;
+    assign _eret = inst_ERET;
 endmodule

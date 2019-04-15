@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
 
 module EXE(
+    input reset,
     input [183:0] ID_EXE_BUS,
     output [109:0] EXE_MEM_BUS,
     input [29:0] PC_ADD_8,
@@ -13,6 +14,7 @@ module EXE(
     output valid,
     output finish
 );
+    parameter EXE_NOP = 110'b0;
     wire [4:0] cond;
     wire [3:0] opcode;
     wire of_allow;
@@ -54,6 +56,6 @@ module EXE(
         endcase
     end
     //
-    assign valid = finish & next_valid;
-    assign EXE_MEM_BUS = {through,alu_data,out_data,pc};
+    assign valid = (finish & next_valid) | reset;
+    assign EXE_MEM_BUS = reset? EXE_NOP : {through,alu_data,out_data,pc};
 endmodule
